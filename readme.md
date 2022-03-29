@@ -1,6 +1,6 @@
 # SSL Certificate Inventory (POC)
 
-This is a POC on how to inventorize used SSL Certificates for example in an enterprise environment. The idea was to
+This is a proof of concept on how to inventorize used SSL Certificates for example in an enterprise environment. The idea was to
 use  [masscan](https://github.com/robertdavidgraham/masscan) as the primary network scanner utilizing its huge speed advantage over Nmap and importing the results into an Elasticsearch-Kibana Stack for exploring and generating alerts.  
 
 However, there are some **limitations** to that: 
@@ -12,6 +12,6 @@ To combat these limitations I implemented several ways for importing and generat
 
 I also compiled my own masscan binary, replacing the TLS 1.1 packet with TLS 1.2, as this increased coverage and reduced connection errors significantly when grabbing for Certificates. The binary is included in this repo. Compiling your own TLS 1.2 masscan version is as easy as capturing a TLS 1.2 handshake (e.g. ``curl --tlsv1.2 https://10.X.X.X``   ) with wireshark and inserting the packet [here](https://github.com/robertdavidgraham/masscan/blob/144c527ed55275ee9fbb80bb14fbb5e3fcff3b7e/src/proto-ssl.c#L1059).
 
-#Configuration
+# Configuration
 
-#Usage
+# Usage
