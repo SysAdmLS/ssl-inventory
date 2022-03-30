@@ -7,6 +7,8 @@ from cryptography import x509
 from elasticsearch import Elasticsearch
 from libnmap.parser import NmapParser
 from libnmap.process import NmapProcess
+import threading
+import queue
 
 # config
 es = Elasticsearch([{'host': 'localhost', 'port': 9200, 'scheme': 'http'}])  # elasticsearch connection
@@ -113,24 +115,25 @@ class ScanresultNmap():
         for host in nmap_report.hosts:
             for service in host.services:
                 if service.scripts_results:
-                    certificate = Cert(service.scripts_results[0]['elements']['pem'])
+                    for result in service.scripts_results:
+                        certificate = Cert(result['elements']['pem'])
 
-                    dataentry = {
-                        'timestamp': host.starttime,
-                        'ip': host.ipv4,
-                        'hostname': '',
-                        'port': int(service.port),
-                        'notvalidafter': certificate.notvalidafter,
-                        'subject': certificate.cn,
-                        'issuer': certificate.issuer,
-                        'SANs': certificate.san
+                        dataentry = {
+                            'timestamp': host.starttime,
+                            'ip': host.ipv4,
+                            'hostname': '',
+                            'port': int(service.port),
+                            'notvalidafter': certificate.notvalidafter,
+                            'subject': certificate.cn,
+                            'issuer': certificate.issuer,
+                            'SANs': certificate.san
 
-                    }
-                    if host.hostnames:
-                        dataentry['hostname'] = host.hostnames[0]
+                        }
+                        if host.hostnames:
+                            dataentry['hostname'] = host.hostnames[0]
 
-                    print(dataentry)
-                    self.__index(dataentry)
+                        print(dataentry)
+                        self.__index(dataentry)
 
     def masscantonmap(self, masscan_json: str):
         with open(masscan_json) as f:
@@ -142,12 +145,36 @@ class ScanresultNmap():
                 nm.run()
                 self.parse(NmapParser.parse(nm.stdout))
 
+    def masscantonmap_threaded(self,masscan_json: str, n_threads: int):
+        q = queue.Queue()
+        with open(masscan_json) as f:
+            data = json.load(f)
+        for result in data:
+            for port in result['ports']:
+                print(f"{result['ip']} : {port['port']}")
+                q.put([result['ip'], port['port']])
+        for _ in range(n_threads):
+            threading.Thread(target=self.__masscantonmap_worker,
+                             args=(q,)).start()
+        q.join()
+    def __masscantonmap_worker(self, q):
+        while True:
+            try:
+                work = q.get(timeout=1)
+            except queue.Empty:
+                return
+            print(work)
+            nm = NmapProcess(work[0], options=f"-p{work[1]} --script ssl-cert --script-timeout 2")
+            nm.run()
+            self.parse(NmapParser.parse(nm.stdout))
+            q.task_done()
 
 if __name__ == '__main__':
     # ScanresultMasscan('test.json', 'test')
     # ScanresultMasscan('test2.json', 'test')
     # ScanresultNmap('test').parsefromfile('test.xml')
     start = timer()
-    ScanresultNmap('test').masscantonmap('test.json')
-    end = timer()
-    print(end - start)
+    #ScanresultNmap('test_singlenmap').masscantonmap('test.json')
+    ScanresultNmap('test').masscantonmap_threaded('test2.json', 20)
+    end = timer() - start
+    print(f"{end} seconds elapsed")
