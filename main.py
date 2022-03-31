@@ -149,10 +149,16 @@ class ScanresultNmap():
         q = queue.Queue()
         with open(masscan_json) as f:
             data = json.load(f)
+        scanlist = {}
         for result in data:
             for port in result['ports']:
                 print(f"{result['ip']} : {port['port']}")
-                q.put([result['ip'], port['port']])
+                try:
+                    scanlist[result['ip']].add(str(port['port']))
+                except KeyError:
+                    scanlist[result['ip']] = {str(port['port'])}
+        for x in scanlist:
+            q.put([x,','.join(scanlist[x])])
         for _ in range(n_threads):
             threading.Thread(target=self.__masscantonmap_worker,
                              args=(q,)).start()
@@ -164,7 +170,7 @@ class ScanresultNmap():
             except queue.Empty:
                 return
             print(work)
-            nm = NmapProcess(work[0], options=f"-p{work[1]} --script ssl-cert --script-timeout 2")
+            nm = NmapProcess(work[0], options=f"-p{work[1]} --script ssl-cert --script-timeout 10")
             nm.run()
             self.parse(NmapParser.parse(nm.stdout))
             q.task_done()
@@ -175,6 +181,7 @@ if __name__ == '__main__':
     # ScanresultNmap('test').parsefromfile('test.xml')
     start = timer()
     #ScanresultNmap('test_singlenmap').masscantonmap('test.json')
-    ScanresultNmap('test').masscantonmap_threaded('test2.json', 20)
+    ScanresultNmap('test').masscantonmap_threaded('test.json', 10)
+
     end = timer() - start
     print(f"{end} seconds elapsed")
