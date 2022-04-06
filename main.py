@@ -2,6 +2,7 @@ import json
 import socket
 import logging
 from timeit import default_timer as timer
+from tqdm import tqdm
 
 from cryptography import x509
 from elasticsearch import Elasticsearch
@@ -13,6 +14,22 @@ import queue
 # config
 es = Elasticsearch([{'host': 'localhost', 'port': 9200, 'scheme': 'http'}])  # elasticsearch connection
 
+# create logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
+
+# create console handler and set level to debug
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+# create formatter
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# add formatter to ch
+ch.setFormatter(formatter)
+
+# add ch to logger
+logger.addHandler(ch)
 
 class Cert:
     """Class to handle the certificate"""
@@ -71,7 +88,7 @@ class ScanresultMasscan:
                     if port['service']['name'] == 'X509':
                         certificate = Cert(
                             '-----BEGIN CERTIFICATE-----\n' + port['service']['banner'] + '\n-----END CERTIFICATE-----')
-                        print(result)
+                        logger.debug(result)
 
                         dataentry = {
                             'timestamp': result['timestamp'],
@@ -88,14 +105,14 @@ class ScanresultMasscan:
                         try:
                             dataentry['hostname'] = socket.gethostbyaddr(result['ip'])[0]
                         except socket.herror as e:
-                            logging.warning(e)
+                            logger.warning(e)
 
-                        print(dataentry)
+                        logger.debug(dataentry)
                         self.__index(dataentry)
                 except KeyError:
                     pass
                 except ValueError:
-                    logging.warning(result['ip'] + ' failed')
+                    logger.warning(result['ip'] + ' failed')
 
 
 class ScanresultNmap():
@@ -132,7 +149,7 @@ class ScanresultNmap():
                         if host.hostnames:
                             dataentry['hostname'] = host.hostnames[0]
 
-                        print(dataentry)
+                        logger.debug(dataentry)
                         self.__index(dataentry)
 
     def masscantonmap(self, masscan_json: str):
@@ -140,7 +157,7 @@ class ScanresultNmap():
             data = json.load(f)
         for result in data:
             for port in result['ports']:
-                print(f"{result['ip']} : {port['port']}")
+                logger.debug(f"{result['ip']} : {port['port']}")
                 nm = NmapProcess(result['ip'], options=f"-p{port['port']} --script ssl-cert --script-timeout 2")
                 nm.run()
                 self.parse(NmapParser.parse(nm.stdout))
@@ -152,27 +169,30 @@ class ScanresultNmap():
         scanlist = {}
         for result in data:
             for port in result['ports']:
-                print(f"{result['ip']} : {port['port']}")
+                logger.debug((f"{result['ip']} : {port['port']}"))
                 try:
                     scanlist[result['ip']].add(str(port['port']))
                 except KeyError:
                     scanlist[result['ip']] = {str(port['port'])}
         for x in scanlist:
             q.put([x,','.join(scanlist[x])])
+        pbar = tqdm(desc='Scanning hosts for certificates',total=q.qsize())
         for _ in range(n_threads):
             threading.Thread(target=self.__masscantonmap_worker,
-                             args=(q,)).start()
+                             args=(q,pbar)).start()
         q.join()
-    def __masscantonmap_worker(self, q):
+        pbar.close()
+    def __masscantonmap_worker(self, q,pbar :tqdm):
         while True:
             try:
                 work = q.get(timeout=1)
             except queue.Empty:
                 return
-            print(work)
+            logger.debug(work)
             nm = NmapProcess(work[0], options=f"-p{work[1]} --script ssl-cert --script-timeout 10")
             nm.run()
             self.parse(NmapParser.parse(nm.stdout))
+            pbar.update()
             q.task_done()
 
 if __name__ == '__main__':
@@ -181,7 +201,7 @@ if __name__ == '__main__':
     # ScanresultNmap('test').parsefromfile('test.xml')
     start = timer()
     #ScanresultNmap('test_singlenmap').masscantonmap('test.json')
-    ScanresultNmap('test').masscantonmap_threaded('test.json', 10)
-
+    ScanresultNmap('test').masscantonmap_threaded('test2.json', 10)
+    #ScanresultNmap('test').parsefromfile('nmapperf_default.xml')
     end = timer() - start
     print(f"{end} seconds elapsed")
