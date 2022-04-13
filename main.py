@@ -1,18 +1,24 @@
 import json
 import socket
 import logging
+import threading
+import queue
+
 from timeit import default_timer as timer
 from tqdm import tqdm
-
 from cryptography import x509
 from elasticsearch import Elasticsearch
 from libnmap.parser import NmapParser
 from libnmap.process import NmapProcess
-import threading
-import queue
+from opensearchpy import OpenSearch
+from datetime import datetime
+
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) # disable urllib3 warning coming from the elastic/open-search library bc of self signed tls
 
 # config
-es = Elasticsearch([{'host': 'localhost', 'port': 9200, 'scheme': 'http'}])  # elasticsearch connection
+#es = Elasticsearch([{'host': 'localhost', 'port': 9200, 'scheme': 'http'}])  # elasticsearch connection
+es = OpenSearch([{'host': 'localhost', 'port': 9200}],http_auth=('admin', 'admin'),use_ssl = True,verify_certs = False) # opensearch connection
 
 # create logger
 logger = logging.getLogger(__name__)
@@ -77,9 +83,9 @@ class ScanresultMasscan:
 
     def __index(self, entry):
         """Function to write the datapoint to elasticsearch"""
-        es.index(index=self.es_index, id=entry['ip'] + ':' + str(entry['port']), document=entry)
-
-    def parse(self):
+        #es.index(index=self.es_index, id=entry['ip'] + ':' + str(entry['port']), document=entry) # elasticsearch index function
+        es.index(index=self.es_index, id=entry['ip'] + ':' + str(entry['port']), body=entry, refresh=True) # opensearch index function
+    def __parse(self):
         """Parse the masscan json"""
         for result in self.data:
             for port in result['ports']:
@@ -91,7 +97,7 @@ class ScanresultMasscan:
                         logger.debug(result)
 
                         dataentry = {
-                            'timestamp': result['timestamp'],
+                            'timestamp': datetime.fromtimestamp(int(result['timestamp'])),
                             'ip': result['ip'],
                             'hostname': '',
                             'port': int(port['port']),
@@ -121,8 +127,8 @@ class ScanresultNmap():
 
     def __index(self, entry):
         """Function to write the datapoint to elasticsearch"""
-        es.index(index=self.es_index, id=entry['ip'] + ':' + str(entry['port']), document=entry)
-
+        #es.index(index=self.es_index, id=entry['ip'] + ':' + str(entry['port']), document=entry) # elasticsearch index function
+        es.index(index=self.es_index, id=entry['ip'] + ':' + str(entry['port']), body=entry,refresh = True) # opensearch index function
     def parsefromfile(self, xmlfile: str):
         """Function to parse nmap xmlfile output to elasticsearch"""
         nmap_report = NmapParser.parse_fromfile(xmlfile)
@@ -136,7 +142,7 @@ class ScanresultNmap():
                         certificate = Cert(result['elements']['pem'])
 
                         dataentry = {
-                            'timestamp': host.starttime,
+                            'timestamp': datetime.fromtimestamp(int(host.starttime)),
                             'ip': host.ipv4,
                             'hostname': '',
                             'port': int(service.port),
@@ -201,7 +207,7 @@ if __name__ == '__main__':
     # ScanresultNmap('test').parsefromfile('test.xml')
     start = timer()
     #ScanresultNmap('test_singlenmap').masscantonmap('test.json')
-    ScanresultNmap('test').masscantonmap_threaded('test2.json', 10)
+    ScanresultNmap('test').masscantonmap_threaded('test.json', 10)
     #ScanresultNmap('test').parsefromfile('nmapperf_default.xml')
     end = timer() - start
     print(f"{end} seconds elapsed")
