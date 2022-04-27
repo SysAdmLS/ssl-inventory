@@ -122,6 +122,7 @@ class ScanresultMasscan:
 
 
 class ScanresultNmap():
+    """Class for generating and importing nmap results in json format to elasticsearch"""
     def __init__(self, indexname: str):
         self.es_index = indexname
 
@@ -135,6 +136,7 @@ class ScanresultNmap():
         self.parse(nmap_report)
 
     def parse(self, nmap_report):
+        """Function to parse nmap output to elasticsearch"""
         for host in nmap_report.hosts:
             for service in host.services:
                 if service.scripts_results:
@@ -159,6 +161,7 @@ class ScanresultNmap():
                         self.__index(dataentry)
 
     def masscantonmap(self, masscan_json: str):
+        """Deprecated, masscantonmap_threaded!! Function to parse masscan results and rescan for certificates with nmap"""
         with open(masscan_json) as f:
             data = json.load(f)
         for result in data:
@@ -169,6 +172,7 @@ class ScanresultNmap():
                 self.parse(NmapParser.parse(nm.stdout))
 
     def masscantonmap_threaded(self,masscan_json: str, n_threads: int):
+        """Function to parse masscan results and rescan for certificates with nmap but with multi threading and optimized target list building"""
         q = queue.Queue()
         with open(masscan_json) as f:
             data = json.load(f)
@@ -176,6 +180,7 @@ class ScanresultNmap():
         for result in data:
             for port in result['ports']:
                 logger.debug((f"{result['ip']} : {port['port']}"))
+                # building a dictionary that holds the unique ports for every specific ip found by masscan using a set for the ports
                 try:
                     scanlist[result['ip']].add(str(port['port']))
                 except KeyError:
@@ -202,12 +207,7 @@ class ScanresultNmap():
             q.task_done()
 
 if __name__ == '__main__':
-    # ScanresultMasscan('test.json', 'test')
-    # ScanresultMasscan('test2.json', 'test')
-    # ScanresultNmap('test').parsefromfile('test.xml')
     start = timer()
-    #ScanresultNmap('test_singlenmap').masscantonmap('test.json')
     ScanresultNmap('test').masscantonmap_threaded('test.json', 10)
-    #ScanresultNmap('test').parsefromfile('nmapperf_default.xml')
     end = timer() - start
     print(f"{end} seconds elapsed")
