@@ -1,0 +1,52 @@
+name: "Certificate expiry check"
+type: any
+index: test
+timestamp_field: timestamp
+
+filter:
+- bool:
+    must_not: [ {term: {port : 3389}},{term: {port : 25}}]
+- range:
+    notvalidafter:
+      from: now
+      to: now+60d
+
+buffer_time:
+  days: 1
+
+run_every:
+  minutes: 2
+
+timeframe:
+  days: 5
+scan_entire_timeframe: true
+
+allow_future_timeranges: false
+
+
+query_key:
+  - ip
+  - port
+realert:
+  days: 1
+
+include: ["hostname","ip","port","subject","issuer","notvalidafter","SANs"]
+alert_text_type: alert_text_only
+alert_text:
+  "
+  The following certificate expires soon:\n 
+  Host: {0}\n
+  IP: {1} \n
+  Port: {2} \n
+  Subject: {3} \n
+  Issuer: {4} \n
+  Not valid after: {5} \n
+  SANs: {6} \n
+  "
+alert_text_args: ["hostname","ip","port","subject","issuer","notvalidafter","SANs"]
+alert:
+  - "email"
+email:
+  - "test@example.com"
+  - "info@example.com"
+smtp_host: smtp.example.com
